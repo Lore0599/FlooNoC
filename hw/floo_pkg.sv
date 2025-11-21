@@ -90,18 +90,6 @@ package floo_pkg;
     VcPreemptValid  = 2'd2
   } vc_impl_e;
 
-  /// The types of collective communication
-  typedef enum logic [1:0] {
-    /// Normal communication
-    Unicast = 2'd0,
-    /// Multicast communication
-    Multicast = 2'd1,
-    /// Parallel reduction operations
-    ParallelReduction = 2'd2,
-    /// Offload Reduction
-    OffloadReduction = 2'd3
-  } collect_comm_e;
-
   /// TODO(lleone): delet this portion of code
   // /// The types of collective communication
   // typedef enum logic [1:0] {

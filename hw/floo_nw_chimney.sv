@@ -91,7 +91,6 @@ module floo_nw_chimney #(
   parameter type floo_rsp_t                             = logic,
   /// Floo `wide` link type
   parameter type floo_wide_t                            = logic,
-  parameter type floo_wide_in_t                         = logic,
   /// SRAM configuration type `tc_sram_impl` in RoB
   /// Only used if technology-dependent SRAM is used
   parameter type sram_cfg_t                             = logic,
@@ -126,7 +125,7 @@ module floo_nw_chimney #(
   /// Input links from NoC
   input  floo_req_t   floo_req_i,
   input  floo_rsp_t   floo_rsp_i,
-  input  floo_wide_in_t  floo_wide_i
+  input  floo_wide_t  floo_wide_i
 );
 
   import floo_pkg::*;
@@ -166,7 +165,6 @@ module floo_nw_chimney #(
 
   // Collective communication configuration
   localparam floo_pkg::collect_op_fe_cfg_t CollectOpCfg = RouteCfg.CollectiveCfg.OpCfg;
->>>>>>> 511100d (hw: Introduce support for reduction operations)
   localparam int unsigned NumVirtualChannels = EnDecoupledRW ? 2 : 1;
 
   // Duplicate AXI port signals to degenerate ports
@@ -1443,21 +1441,6 @@ module floo_nw_chimney #(
     $fatal(1, "NW CHIMNEY: Unsupported number of wide physical channels");
   end
 
-  // Mux the valid of the read and write channels to the ACK/NACK protocol
-  // of the virtual channel for decoupled read and write output requests.
-  // AW/W -> Virtual Channel 0
-  // R -> Virtual Channel 1
-  // TODO(lleone): check if this really solve DEADLOCK!!!!
-  if (EnDecoupledRW) begin: gen_vc_rw_ack
-    assign floo_wide_o.valid[0] = (floo_wide_o.wide.generic.hdr.axi_ch != WideR) ? floo_wide_req_arb_valid_out : 1'b0;
-    assign floo_wide_o.valid[1] = (floo_wide_o.wide.generic.hdr.axi_ch == WideR) ? floo_wide_req_arb_valid_out : 1'b0;
-    assign floo_wide_req_arb_gnt_in = (floo_wide_o.wide.generic.hdr.axi_ch != WideR) ?
-                                       floo_wide_i.ready[0] : floo_wide_i.ready[1];
-  end else begin: gen_no_vc_rw_ack
-    assign floo_wide_o.valid = floo_wide_req_arb_valid_out;
-    assign floo_wide_req_arb_gnt_in = floo_wide_i.ready;
-  end
-
 
   ////////////////////
   // FLIT UNPACKER  //
@@ -1800,6 +1783,13 @@ module floo_nw_chimney #(
                            (floo_req_unpack_generic.hdr.axi_ch == WideAr)))
   `ASSERT(NoWideSbrPortWRequest,  ChimneyCfgW.EnSbrPort || !(floo_wide_in_valid &&
                            (floo_wide_unpack_generic_wr.hdr.axi_ch == WideW)))
+
+  // We do not support reduction with ROB Buffer
+  `ASSERT_INIT(NoRobReduction,
+              !(is_en_wide_reduction(CollectOpCfg) | is_en_narrow_reduction(CollectOpCfg)) ||
+              (ChimneyCfgN.BRoBType == NoRoB && ChimneyCfgN.RRoBType == NoRoB &&
+               ChimneyCfgW.BRoBType == NoRoB && ChimneyCfgW.RRoBType == NoRoB),
+               "Invalid Chimney Cfg with reduction support")
 
   // When virtual channels for decoupled read and write is enabled,
   // req_i and req_o must have same amount of VCs, equal to NumVirtualChannels
