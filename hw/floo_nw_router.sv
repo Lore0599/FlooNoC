@@ -33,7 +33,7 @@ module floo_nw_router #(
   /// assumed that write transactions are alwasy on VC0.
   parameter int unsigned  NumWideVirtChannels       = 32'd1,
   parameter int unsigned  NumWidePhysChannels       = 32'd1,
-  parameter floo_pkg::vc_impl_e VcImplementation    = floo_pkg::VcNaive,
+  parameter floo_pkg::vc_impl_e VcImpl              = floo_pkg::VcNaive,
   /// Enable multicast feature
   parameter bit          EnMultiCast          = 1'b0,
   /// Node ID type
@@ -100,7 +100,7 @@ module floo_nw_router #(
   logic [NumOutputs-1:0] rsp_valid_in, rsp_ready_out;
   logic [NumRoutes-1:0][NumWideVirtChannels-1:0] wide_valid_in, wide_valid_out;
   logic [NumRoutes-1:0][NumWideVirtChannels-1:0] wide_ready_in, wide_ready_out;
-  logic [NumRoutes-1:0][NumWideVirtChannels-1:0] wide_credit_in, wide_credit_out;
+  // logic [NumRoutes-1:0][NumWideVirtChannels-1:0] wide_credit_in, wide_credit_out;
 
   for (genvar i = 0; i < NumInputs; i++) begin : gen_chimney_req
     assign req_valid_in[i] = floo_req_i[i].valid;
@@ -130,23 +130,23 @@ module floo_nw_router #(
   end
 
   // Generation of credit based conenctions only when necessary
-  if (VcImplementation == floo_pkg::VcCreditBased) begin: gen_credit_connections
-    // Narrow lreq inks never rely on credit based flow
-    for (genvar i = 0; i < NumInputs; i++) begin: gen_credit_tied_zero_req
-      assign floo_req_o[i].credit = '0;
-    end
-    // Narrow rsp links never rely on credit based flow
-    for (genvar i = 0; i < NumOutputs; i++) begin: gen_credit_tied_zero_rsp
-      assign floo_rsp_o[i].credit = '0;
-    end
-    // Wide links credit connections
-    for (genvar i = 0; i < NumRoutes; i++) begin: gen_credit_wide
-      assign floo_wide_o[i].credit = wide_credit_out[i];
-      assign wide_credit_in[i] = floo_wide_i[i].credit;
-    end
-  end else begin: gen_no_credit_connections
-    assign wide_credit_in = '0;
-  end
+  // if (VcImpl == floo_pkg::VcCreditBased) begin: gen_credit_connections
+  //   // Narrow lreq inks never rely on credit based flow
+  //   for (genvar i = 0; i < NumInputs; i++) begin: gen_credit_tied_zero_req
+  //     assign floo_req_o[i].credit = '0;
+  //   end
+  //   // Narrow rsp links never rely on credit based flow
+  //   for (genvar i = 0; i < NumOutputs; i++) begin: gen_credit_tied_zero_rsp
+  //     assign floo_rsp_o[i].credit = '0;
+  //   end
+  //   // Wide links credit connections
+  //   for (genvar i = 0; i < NumRoutes; i++) begin: gen_credit_wide
+  //     assign floo_wide_o[i].credit = wide_credit_out[i];
+  //     assign wide_credit_in[i] = floo_wide_i[i].credit;
+  //   end
+  // end else begin: gen_no_credit_connections
+  //   assign wide_credit_in = '0;
+  // end
 
   floo_router #(
     .NumInput         ( NumInputs               ),
@@ -173,11 +173,9 @@ module floo_nw_router #(
     .valid_i        ( req_valid_in  ),
     .ready_o        ( req_ready_out ),
     .data_i         ( req_in        ),
-    .credit_i       ( '0            ),
     .valid_o        ( req_valid_out ),
     .ready_i        ( req_ready_in  ),
-    .data_o         ( req_out       ),
-    .credit_o       ( /*unused */   )
+    .data_o         ( req_out       )
   );
 
   // We construct the masks for the narrow and wide B responses here.
@@ -226,11 +224,9 @@ module floo_nw_router #(
     .valid_i        ( rsp_valid_in  ),
     .ready_o        ( rsp_ready_out ),
     .data_i         ( rsp_in        ),
-    .credit_i       ( '0            ),
     .valid_o        ( rsp_valid_out ),
     .ready_i        ( rsp_ready_in  ),
-    .data_o         ( rsp_out       ),
-    .credit_o       ( /*unused */   )
+    .data_o         ( rsp_out       )
   );
 
 
@@ -244,7 +240,7 @@ module floo_nw_router #(
     .XYRouteOpt       ( XYRouteOpt                ),
     .NumAddrRules     ( NumAddrRules              ),
     .NoLoopback       ( 1'b1                      ),
-    .VcImplementation ( VcImplementation          ),
+    .VcImpl           ( VcImpl                    ),
     .EnMultiCast      ( EnMultiCast               ),
     .EnReduction      ( 1'b0                      ),
     .id_t             ( id_t                      ),
@@ -259,11 +255,9 @@ module floo_nw_router #(
     .valid_i        ( wide_valid_in   ),
     .ready_o        ( wide_ready_out  ),
     .data_i         ( wide_in         ),
-    .credit_i       ( wide_credit_in  ),
     .valid_o        ( wide_valid_out  ),
     .ready_i        ( wide_ready_in   ),
-    .data_o         ( wide_out        ),
-    .credit_o       ( wide_credit_out )
+    .data_o         ( wide_out        )
   );
 
 endmodule

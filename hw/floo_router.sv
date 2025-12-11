@@ -39,7 +39,7 @@ module floo_router
   /// Disables loopback connections
   parameter bit          NoLoopback       = 1'b1,
   /// Select VC implementation
-  parameter floo_pkg::vc_impl_e VcImplementation = floo_pkg::VcNaive,
+  parameter floo_pkg::vc_impl_e VcImpl    = floo_pkg::VcNaive,
   /// Enable Multicast feature
   parameter bit          EnMultiCast      = 1'b0,
   /// Enable reduction feature
@@ -62,12 +62,10 @@ module floo_router
   input  logic  [NumInput-1:0][NumVirtChannels-1:0]  valid_i,
   output logic  [NumInput-1:0][NumVirtChannels-1:0]  ready_o,
   input  flit_t [NumInput-1:0][NumPhysChannels-1:0]  data_i,
-  output logic  [NumInput-1:0][NumVirtChannels-1:0]  credit_o,
   /// Output channels
   output logic  [NumOutput-1:0][NumVirtChannels-1:0] valid_o,
   input  logic  [NumOutput-1:0][NumVirtChannels-1:0] ready_i,
-  output flit_t [NumOutput-1:0][NumPhysChannels-1:0] data_o,
-  input  logic  [NumOutput-1:0][NumVirtChannels-1:0] credit_i
+  output flit_t [NumOutput-1:0][NumPhysChannels-1:0] data_o
 );
 
   // TODO MICHAERO: assert NumPhysChannels <= NumVirtChannels
@@ -77,6 +75,8 @@ module floo_router
 
   logic  [NumInput-1:0][NumVirtChannels-1:0][NumOutput-1:0] route_mask;
 
+  // Ready signals on the input ports for the different implementations
+  logic [NumInput-1:0][NumVirtChannels-1:0] in_ready_fifo, in_ready_credit;
   // Credit generation for virtual channel support
   logic [NumInput-1:0][NumVirtChannels-1:0] credit_gnt_q, credit_gnt_d;
 
@@ -93,6 +93,8 @@ module floo_router
         $fatal(1, "unimplemented");
       end
 
+      assign ready_o[in][v] = (VcImpl != VcCreditBased) ? in_ready_fifo[in][v]
+                                                                  : in_ready_credit[in][v];
       (* ungroup *)
       stream_fifo_optimal_wrap #(
         .Depth  ( InFifoDepth ),
@@ -103,12 +105,12 @@ module floo_router
         .testmode_i ( test_enable_i ),
         .flush_i    ( 1'b0  ),
         .usage_o    (       ),
-        .data_i     ( data_i  [in][in_p] ),
-        .valid_i    ( valid_i [in][v]    ),
-        .ready_o    ( ready_o [in][v]    ),
-        .data_o     ( in_data [in][v]    ),
-        .valid_o    ( in_valid[in][v]    ),
-        .ready_i    ( in_ready[in][v]    )
+        .data_i     ( data_i  [in][in_p]    ),
+        .valid_i    ( valid_i [in][v]       ),
+        .ready_o    ( in_ready_fifo [in][v] ),
+        .data_o     ( in_data [in][v]       ),
+        .valid_o    ( in_valid[in][v]       ),
+        .ready_i    ( in_ready[in][v]       )
       );
 
       floo_route_select #(
@@ -136,12 +138,10 @@ module floo_router
       );
 
       // Credit count generation. Assign 1 upon any handshake
-      if (VcImplementation == floo_pkg::VcCreditBased) begin: gen_credit_support
-        assign credit_o[in][v] = credit_gnt_q[in][v];
+      if (VcImpl == floo_pkg::VcCreditBased) begin: gen_credit_support
+        assign in_ready_credit[in][v] = credit_gnt_q[in][v];
         assign credit_gnt_d[in][v] = in_valid[in][v] & in_ready[in][v];
         `FF(credit_gnt_q[in][v], credit_gnt_d[in][v], 1'b0);
-      end else begin: gen_no_credit
-        assign credit_o[in][v] = 1'b1;
       end
     end
   end
@@ -284,7 +284,7 @@ module floo_router
       .NumVirtChannels  ( NumVirtChannels  ),
       .flit_t           ( flit_t           ),
       .NumPhysChannels  ( NumPhysChannels  ),
-      .VcImplementation ( VcImplementation )
+      .VcImpl ( VcImpl )
     ) i_vc_arbiter (
       .clk_i,
       .rst_ni,
@@ -295,8 +295,7 @@ module floo_router
 
       .ready_i  ( ready_i  [out] ),
       .valid_o  ( valid_o  [out] ),
-      .data_o   ( data_o   [out] ),
-      .credit_i ( credit_i[out] )
+      .data_o   ( data_o   [out] )
     );
   end
 

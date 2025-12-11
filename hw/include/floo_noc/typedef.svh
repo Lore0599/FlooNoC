@@ -311,7 +311,6 @@
   typedef struct packed {                                        \
     logic [vc_num-1:0] valid;                                    \
     logic [vc_num-1:0] ready;                                    \
-    logic [vc_num-1:0] credit;                                 \
     floo_``chan_name``_chan_t [phy_num-1:0] ``chan_name``;       \
   } floo_``name``_t;
 

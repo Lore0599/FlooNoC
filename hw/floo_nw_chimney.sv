@@ -33,11 +33,16 @@ module floo_nw_chimney #(
   /// and one ID is reserved for non-atomic transactions
   parameter int unsigned MaxAtomicTxns           = 1,
   /// Enable support for decoupling read and write channels
+  /// when enabled, the wide read and write transactions
+  /// use separate channels (virtual or physical)
   parameter bit EnDecoupledRW                      = 1'b0,
-  /// Specify how many physical channel are used for teh wide connection
+  /// Specify how many physical channel are used for the wide connection
+  /// This parameter is used together with `EnDecoupledRW`. When read
+  /// and write channekls are decoupled, the two streams can either share
+  /// a single physical channel or use two separate physical channels.
   parameter int unsigned NumWidePhysChannels        = 1,
   /// Specify which VC implementation to use for the wide channels
-  parameter floo_pkg::vc_impl_e VcImplementation        = floo_pkg::VcNaive,
+  parameter floo_pkg::vc_impl_e VcImpl              = floo_pkg::VcNaive,
   /// Node ID type for routing
   parameter type id_t                                   = logic,
   /// RoB index type for reordering.
@@ -283,25 +288,26 @@ module floo_nw_chimney #(
   if (EnDecoupledRW) begin : gen_vc_demux
     assign floo_wide_in_wr_valid = floo_wide_i.valid[WRITE];
     assign floo_wide_in_rd_valid = floo_wide_i.valid[READ];
-    assign floo_wide_o.ready[WRITE] = floo_wide_out_wr_ready;
-    assign floo_wide_o.ready[READ] = floo_wide_out_rd_ready;
     if (NumWidePhysChannels == 1) begin : gen_single_phys_ch
       // Connect the single physical channel to both read and write
       // the valid and ready coming from teh VCs will be used to know if the data can be used
       assign floo_wide_in_wr = floo_wide_i.wide;
       assign floo_wide_in_rd = floo_wide_i.wide;
 
-      if (VcImplementation == floo_pkg::VcCreditBased) begin : gen_credit_support
-        // Drive credit signals for incoming requests
-        `FF(floo_wide_o.credit[WRITE], floo_wide_in_wr_valid & floo_wide_out_wr_ready, 1'b0);
-        `FF(floo_wide_o.credit[READ], floo_wide_in_rd_valid & floo_wide_out_rd_ready, 1'b0);
+      if (VcImpl == floo_pkg::VcCreditBased) begin : gen_credit_support
+        // Drive ready signal as a credit for incoming requests
+        `FF(floo_wide_o.ready[WRITE] , floo_wide_in_wr_valid & floo_wide_out_wr_ready, 1'b0);
+        `FF(floo_wide_o.ready[READ], floo_wide_in_rd_valid & floo_wide_out_rd_ready, 1'b0);
       end else begin: gen_no_credit_support
-        assign floo_wide_o.credit = '0;
+        assign floo_wide_o.ready[WRITE] = floo_wide_out_wr_ready;
+        assign floo_wide_o.ready[READ] = floo_wide_out_rd_ready;
       end
 
     end else if (NumWidePhysChannels == 2) begin : gen_dual_phys_ch
       assign floo_wide_in_wr = floo_wide_i.wide[WRITE];
       assign floo_wide_in_rd = floo_wide_i.wide[READ];
+      assign floo_wide_o.ready[WRITE] = floo_wide_out_wr_ready;
+      assign floo_wide_o.ready[READ] = floo_wide_out_rd_ready;
     end else begin: gen_illegal_cfg
       $fatal(1, "NW CHIMNEY: Unsupported number of wide physical channels");
     end
