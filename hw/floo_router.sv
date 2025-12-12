@@ -517,7 +517,7 @@ module floo_router
       // Assert that the input data is stable when valid is asserted
       // `ASSERT(StableDataIn, valid_i[i][v] && !ready_o[i][v] |=> $stable(data_i[i][v]))
       // Assert that valid is stable when ready is not asserted
-      `ASSERT(StableValidIn, valid_i[i][v] && !ready_o[i][v] |=> $stable(valid_i[i][v]))
+      `ASSERT(StableValidIn, (VcImpl != VcNaive) or (valid_i[i][v] && !ready_o[i][v] |=> $stable(valid_i[i][v])))
     end
   end
 
@@ -526,7 +526,7 @@ module floo_router
       // Assert that the input data is stable when valid is asserted
       // `ASSERT(StableDataOut, valid_o[o][v] && !ready_i[o][v] |=> $stable(data_o[o][v]))
       // Assert that valid is stable when ready is not asserted
-      `ASSERT(StableValidOut, valid_o[o][v] && !ready_i[o][v] |=> $stable(valid_o[o][v]))
+      `ASSERT(StableValidOut, (VcImpl != VcNaive) or (valid_o[o][v] && !ready_i[o][v] |=> $stable(valid_o[o][v])))
     end
   end
 

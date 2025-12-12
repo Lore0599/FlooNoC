@@ -25,9 +25,8 @@ module floo_vc_arbiter import floo_pkg::*;
   /// Ports towards the physical channels
   input  logic  [NumVirtChannels-1:0] ready_i,
   output logic  [NumVirtChannels-1:0] valid_o,
-  output flit_t [NumPhysChannels-1:0] data_o,
-  input  logic  [NumVirtChannels-1:0] credit_i
-);
+  output flit_t [NumPhysChannels-1:0] data_o
+  );
 
 if (NumVirtChannels == NumPhysChannels) begin : gen_virt_eq_phys
   assign valid_o = valid_i;
@@ -93,7 +92,8 @@ end else if (NumPhysChannels == 1) begin : gen_single_phys
 
     // The arbitration tree only accepts a single grant signal. Therefore,
     // The grant of the channel that has won the arbitration is forwarded
-    assign vc_arb_gnt_in = ready_i[vc_arb_idx];
+    assign vc_arb_gnt_in = (VcImpl != VcCreditBased) ?  ready_i[vc_arb_idx]
+                                                     : credit_left[vc_arb_idx];
 
     // One-hot encoding of the arbitration winning channel
     always_comb begin

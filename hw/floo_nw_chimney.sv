@@ -1396,51 +1396,54 @@ module floo_nw_chimney #(
     .valid_o  ( floo_rsp_o.valid      )
   );
 
-  if (NumWidePhysChannels == 1) begin: gen_wide_out_wrmh
+  if (!EnDecoupledRW) begin: gen_no_decoupled_rw
+    // When not decoupling read and write channels, we can use a single
+    // wormhole arbiter for the wide channels
     floo_wormhole_arbiter #(
       .NumRoutes  ( 3                         ),
       .flit_t     ( floo_wide_generic_flit_t  )
     ) i_wide_wormhole_arbiter (
       .clk_i,
       .rst_ni,
-      .valid_i  ( floo_wide_arb_req_in         ),
-      .data_i   ( floo_wide_arb_in             ),
-      .ready_o  ( floo_wide_arb_gnt_out        ),
-      .data_o   ( floo_wide_o.wide             ),
-      .ready_i  ( floo_wide_req_arb_gnt_in     ),
-      .valid_o  ( floo_wide_req_arb_valid_out  )
+      .valid_i  ( floo_wide_arb_req_in  ),
+      .data_i   ( floo_wide_arb_in      ),
+      .ready_o  ( floo_wide_arb_gnt_out ),
+      .data_o   ( floo_wide_o.wide      ),
+      .ready_i  ( floo_wide_i.ready     ),
+      .valid_o  ( floo_wide_o.valid     )
     );
+  end else begin: gen_decoupled_rw
+    // When decoupling read and write channels, we need to use
+    // a virtual channel arbiter
+    logic [1:0] floo_wide_arb_req_in_vc;
+    logic [1:0] floo_wide_arb_gnt_out_vc;
+    floo_wide_chan_t [1:0] floo_wide_arb_in_vc;
 
-    // Mux the ready of the read and write channels to the ACK/NACK protocol
-    // Demux the valid signals based on the channel type
-    // AW/W -> Virtual Channel 0
-    // R -> Virtual Channel 1
-    // TODO(lleone): check if this really solve DEADLOCK!!!!
-    if (EnDecoupledRW) begin: gen_vc_rw_ack
-      assign floo_wide_o.valid[WRITE] = (floo_wide_o.wide[0].generic.hdr.axi_ch != WideR) ?
-                                         floo_wide_req_arb_valid_out : 1'b0;
-      assign floo_wide_o.valid[READ] = (floo_wide_o.wide[0].generic.hdr.axi_ch == WideR) ?
-                                         floo_wide_req_arb_valid_out : 1'b0;
-      assign floo_wide_req_arb_gnt_in = (floo_wide_o.wide[0].generic.hdr.axi_ch != WideR) ?
-                                        floo_wide_i.ready[WRITE] : floo_wide_i.ready[READ];
-    end else begin: gen_no_vc_rw_ack
-      assign floo_wide_o.valid = floo_wide_req_arb_valid_out;
-      assign floo_wide_req_arb_gnt_in = floo_wide_i.ready;
-    end
-  end else if (NumWidePhysChannels == 2) begin: gen_wide_phys_ch
-    // Connect write channel
-    assign floo_wide_o.wide[0] = floo_wide_arb_in[WideW];
-    assign floo_wide_o.valid[0] = floo_wide_arb_req_in[WideW];
-    assign floo_wide_arb_gnt_out[WideW] = floo_wide_i.ready[0];
+    // Assign Write stream signals
+    assign floo_wide_arb_req_in_vc[WRITE] = floo_wide_arb_req_in[WideW];
+    assign floo_wide_arb_gnt_out[WideW] = floo_wide_arb_gnt_out_vc[WRITE];
+    assign floo_wide_arb_in_vc[WRITE] = floo_wide_arb_in[WideW];
 
-    // Connect read channel
-    assign floo_wide_o.wide[1] = floo_wide_arb_in[WideR];
-    assign floo_wide_o.valid[1] = floo_wide_arb_req_in[WideR];
-    assign floo_wide_arb_gnt_out[WideR] = floo_wide_i.ready[1];
-  end else begin: gen_illegal_cfg
-    $fatal(1, "NW CHIMNEY: Unsupported number of wide physical channels");
+    assign floo_wide_arb_req_in_vc[READ] = floo_wide_arb_req_in[WideR];
+    assign floo_wide_arb_gnt_out[WideR] = floo_wide_arb_gnt_out_vc[READ];
+    assign floo_wide_arb_in_vc[READ] = floo_wide_arb_in[WideR];
+
+    floo_vc_arbiter #(
+      .NumVirtChannels  ( 2       ), // Read and Write streams
+      .flit_t           ( floo_wide_generic_flit_t  ),
+      .NumPhysChannels  ( NumWidePhysChannels  ),
+      .VcImpl           ( VcImpl )
+    ) i_vc_arbiter (
+      .clk_i,
+      .rst_ni,
+      .valid_i  ( floo_wide_arb_req_in_vc   ),
+      .ready_o  ( floo_wide_arb_gnt_out_vc  ),
+      .data_i   ( floo_wide_arb_in_vc       ),
+      .ready_i  ( floo_wide_i.ready         ),
+      .valid_o  ( floo_wide_o.valid         ),
+      .data_o   ( floo_wide_o.wide          )
+    );
   end
-
 
   ////////////////////
   // FLIT UNPACKER  //
@@ -1756,10 +1759,10 @@ module floo_nw_chimney #(
                                    !floo_rsp_i.ready |=> floo_rsp_o.valid)
   `ASSERT(NarrowRspInStableValid, floo_rsp_i.valid &&
                                   !floo_rsp_o.ready |=> floo_rsp_i.valid)
-  `ASSERT(WideOutStableValid, floo_wide_o.valid &&
-                              !floo_wide_i.ready |=> floo_wide_o.valid)
-  `ASSERT(WideStableValid, floo_wide_i.valid &&
-                           !floo_wide_o.ready |=> floo_wide_i.valid)
+  `ASSERT(WideOutStableValid, (VcImpl != VcNaive) or (floo_wide_o.valid &&
+                              !floo_wide_i.ready |=> floo_wide_o.valid))
+  `ASSERT(WideStableValid, (VcImpl != VcNaive) or (floo_wide_i.valid &&
+                           !floo_wide_o.ready |=> floo_wide_i.valid))
 
   // Network Interface cannot accept any B and R responses if `En*MgrPort` are not set
   `ASSERT(NoNarrowMgrPortBResponse, ChimneyCfgN.EnMgrPort || !(floo_rsp_in_valid &&
